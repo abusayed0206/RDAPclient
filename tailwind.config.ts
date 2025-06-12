@@ -3,6 +3,7 @@ import defaultTheme from 'tailwindcss/defaultTheme';
 
 export default {
   content: ['./src/**/*.{js,jsx,ts,tsx}'],
+  darkMode: 'class', // Add this line to enable class-based dark mode
   theme: {
     extend: {
       fontFamily: {
