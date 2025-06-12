@@ -64,7 +64,19 @@ export function findRdapServerUrl(tld: string): string | null {
   return null;
 }
 
-export function normalizeRdapResponse(data: RdapResponse): NormalizedRdapData {
+export interface NormalizedRdapData {
+  domainName: string;
+  registrar: string;
+  dnssec: 'Signed' | 'Unsigned' | 'N/A';
+  registeredOn: string;
+  expiresOn: string;
+  lastUpdated: string;
+  statuses: { label: string; url: string }[];
+  nameservers: string[];
+  rdapServer?: string;
+}
+
+export function normalizeRdapResponse(data: RdapResponse, rdapServerUrl?: string): NormalizedRdapData {
   const findDate = (action: string): string => {
     const event = data.events?.find(e => e.eventAction === action);
     return event ? new Date(event.eventDate).toUTCString() : 'N/A';
@@ -94,5 +106,6 @@ export function normalizeRdapResponse(data: RdapResponse): NormalizedRdapData {
       url: toEppStatusUrl(status),
     })) || [],
     nameservers: data.nameservers?.map(ns => ns.ldhName || 'N/A').filter(Boolean) || [],
+    rdapServer: rdapServerUrl, 
   };
 }
