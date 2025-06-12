@@ -2,6 +2,7 @@
 
 import { Moon, Search, Sun } from 'lucide-react';
 import { useState, useEffect } from 'react';
+import { parse } from 'tldts'; 
 
 import Button from '@/components/buttons/Button';
 import IconButton from '@/components/buttons/IconButton';
@@ -14,22 +15,17 @@ export default function Home() {
   const [results, setResults] = useState<NormalizedRdapData | null>(null);
   const [mode, setMode] = useState<'dark' | 'light'>('light');
 
-  // Initialize theme from user preference or localStorage
   useEffect(() => {
-    // Check for saved user preference
     const savedMode = localStorage.getItem('theme-mode');
     if (savedMode && (savedMode === 'dark' || savedMode === 'light')) {
       setMode(savedMode);
     } else {
-      // Use system preference as fallback
       const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
       setMode(prefersDark ? 'dark' : 'light');
     }
-    
     setStatus({ message: 'Ready to look up domains.', type: 'success' });
   }, []);
 
-  // Apply theme class to document when mode changes
   useEffect(() => {
     const root = document.documentElement;
     if (mode === 'dark') {
@@ -37,23 +33,24 @@ export default function Home() {
     } else {
       root.classList.remove('dark');
     }
-    
-    // Save preference
     localStorage.setItem('theme-mode', mode);
   }, [mode]);
 
-  // Toggle theme mode
   const toggleMode = () => {
     setMode(mode === 'dark' ? 'light' : 'dark');
   };
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    const domainName = domain.trim().toLowerCase();
-    if (!domainName) {
-      setStatus({ message: 'Please enter a domain name.', type: 'warn' });
+    const rawInput = domain.trim().toLowerCase();
+    const parsed = parse(rawInput); 
+
+    if (!parsed.domain) {
+      setStatus({ message: 'Please enter a valid domain name.', type: 'warn' });
       return;
     }
+
+    const domainName = parsed.domain;
 
     setIsLoading(true);
     setResults(null);
@@ -81,10 +78,8 @@ export default function Home() {
     }
   };
 
-  // Function to get the direct RDAP domain URL
   const getRdapDomainUrl = (baseUrl: string, domainName: string): string => {
     const url = new URL(baseUrl);
-    // Ensure the path ends with a slash before adding 'domain/'
     const basePath = url.pathname.endsWith('/') ? url.pathname : `${url.pathname}/`;
     url.pathname = `${basePath}domain/${domainName}`;
     return url.toString();
