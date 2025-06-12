@@ -80,7 +80,7 @@ export function normalizeRdapResponse(data: RdapResponse): NormalizedRdapData {
   };
 
   const toEppStatusUrl = (status: string): string =>
-    `https://icann.org/epp#${status.toLowerCase().replace(/\s+/g, '-')}`;
+    `https://icann.org/epp#${status.toLowerCase().replace(/\s+/g, '')}`;
 
   return {
     domainName: data.ldhName || 'N/A',
