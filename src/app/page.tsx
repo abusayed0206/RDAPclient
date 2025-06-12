@@ -1,11 +1,8 @@
 'use client';
 
-import { Moon, Search, Sun } from 'lucide-react';
+import { Moon, Search, Sun, Globe, Clock, ShieldCheck, Server, FileText, Zap } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { parse } from 'tldts'; 
-
-import Button from '@/components/buttons/Button';
-import IconButton from '@/components/buttons/IconButton';
 import { NormalizedRdapData } from '@/lib/rdap';
 
 export default function Home() {
@@ -97,14 +94,21 @@ export default function Home() {
           : 'bg-white border border-indigo-100'
       }`}>
         <div className="absolute top-4 right-4">
-          <IconButton
-            icon={mode === 'dark' ? Sun : Moon}
-            variant={mode === 'dark' ? 'ghost' : 'ghost'}
+          {/* Replaced IconButton with native button */}
+          <button
             onClick={toggleMode}
-            isDarkBg={mode === 'dark'}
+            className={`
+              inline-flex items-center justify-center p-2 rounded-full text-lg font-semibold
+              transition-colors duration-300
+              ${mode === 'dark' 
+                ? 'text-yellow-300 hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-yellow-500 focus:ring-offset-2 focus:ring-offset-gray-800' 
+                : 'text-indigo-600 hover:bg-indigo-50 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 focus:ring-offset-white'
+              }
+            `}
             aria-label={`Switch to ${mode === 'dark' ? 'light' : 'dark'} mode`}
-            className={mode === 'dark' ? 'text-yellow-300 hover:bg-gray-700' : 'text-indigo-600 hover:bg-indigo-50'}
-          />
+          >
+            {mode === 'dark' ? <Sun className="w-6 h-6" /> : <Moon className="w-6 h-6" />}
+          </button>
         </div>
 
         <header className="text-center mb-8">
@@ -138,23 +142,31 @@ export default function Home() {
               }`}
             />
           </div>
-          <Button 
+          {/* Replaced Button with native button */}
+          <button 
             type="submit"
             disabled={isLoading}
-            variant="primary"
-            className={`w-full sm:w-auto ${
-              mode === 'dark' 
-                ? 'bg-indigo-600 hover:bg-indigo-700 border-indigo-700' 
-                : 'bg-indigo-600 hover:bg-indigo-700 border-indigo-700'
-            }`}
-            leftIcon={isLoading ? undefined : Search}
+            className={`
+              w-full sm:w-auto px-6 py-3 rounded-lg text-lg font-semibold
+              flex items-center justify-center gap-2
+              transition-colors duration-300 transform active:scale-95
+              ${isLoading 
+                ? 'bg-indigo-400 cursor-not-allowed' 
+                : mode === 'dark' 
+                  ? 'bg-indigo-600 hover:bg-indigo-700 border-indigo-700 text-white shadow-lg shadow-indigo-500/30' 
+                  : 'bg-indigo-600 hover:bg-indigo-700 border-indigo-700 text-white shadow-lg shadow-indigo-500/30'
+              }
+            `}
           >
             {isLoading ? (
-              <div className="w-6 h-6 border-4 border-t-transparent rounded-full animate-spin mx-auto" />
+              <div className="w-6 h-6 border-4 border-t-transparent rounded-full animate-spin border-white" />
             ) : (
-              'Lookup'
+              <>
+                <Search className="w-5 h-5" />
+                <span>Lookup</span>
+              </>
             )}
-          </Button>
+          </button>
         </form>
 
         {!results && status.message && status.type !== 'error' && (
@@ -192,6 +204,7 @@ export default function Home() {
               : 'bg-white border-indigo-100'
           }`}>
             <section className="space-y-5">
+              {/* Domain Details Card */}
               <div className={`p-5 rounded-lg shadow-md transition-colors duration-300 ${
                 mode === 'dark' ? 'bg-gray-750 border border-gray-700' : 'bg-white border border-indigo-100'
               }`}>
@@ -199,9 +212,8 @@ export default function Home() {
                   <div className={`p-1.5 rounded-md mr-2 ${
                     mode === 'dark' ? 'bg-indigo-900/30' : 'bg-indigo-100'
                   }`}>
-                    <svg xmlns="http://www.w3.org/2000/svg" className={`w-5 h-5 ${mode === 'dark' ? 'text-indigo-400' : 'text-indigo-600'}`} viewBox="0 0 20 20" fill="currentColor">
-                      <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM4.332 8.027a6.012 6.012 0 011.912-2.706C6.512 5.73 6.974 6 7.5 6A1.5 1.5 0 019 7.5V8a2 2 0 004 0 2 2 0 011.523-1.943A5.977 5.977 0 0116 10c0 .34-.028.675-.083 1H15a2 2 0 00-2 2v2.197A5.973 5.973 0 0110 16v-2a2 2 0 00-2-2 2 2 0 01-2-2 2 2 0 00-1.668-1.973z" clipRule="evenodd" />
-                    </svg>
+                    {/* Replaced SVG with Lucide icon */}
+                    <Globe className={`w-5 h-5 ${mode === 'dark' ? 'text-indigo-400' : 'text-indigo-600'}`} />
                   </div>
                   <h3 className={`text-lg font-bold transition-colors duration-300 ${
                     mode === 'dark' ? 'text-white' : 'text-indigo-900'
@@ -229,6 +241,7 @@ export default function Home() {
                 </dl>
               </div>
 
+              {/* Important Dates Card */}
               <div className={`p-5 rounded-lg shadow-md transition-colors duration-300 ${
                 mode === 'dark' ? 'bg-gray-750 border border-gray-700' : 'bg-white border border-indigo-100'
               }`}>
@@ -236,9 +249,8 @@ export default function Home() {
                   <div className={`p-1.5 rounded-md mr-2 ${
                     mode === 'dark' ? 'bg-indigo-900/30' : 'bg-indigo-100'
                   }`}>
-                    <svg xmlns="http://www.w3.org/2000/svg" className={`w-5 h-5 ${mode === 'dark' ? 'text-indigo-400' : 'text-indigo-600'}`} viewBox="0 0 20 20" fill="currentColor">
-                      <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.415-1.415L11 9.586V6z" clipRule="evenodd" />
-                    </svg>
+                    {/* Replaced SVG with Lucide icon */}
+                    <Clock className={`w-5 h-5 ${mode === 'dark' ? 'text-indigo-400' : 'text-indigo-600'}`} />
                   </div>
                   <h3 className={`text-lg font-bold transition-colors duration-300 ${
                     mode === 'dark' ? 'text-white' : 'text-indigo-900'
@@ -267,6 +279,7 @@ export default function Home() {
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                {/* Domain Status Card */}
                 <div className={`p-5 rounded-lg shadow-md transition-colors duration-300 ${
                   mode === 'dark' ? 'bg-gray-750 border border-gray-700' : 'bg-white border border-indigo-100'
                 }`}>
@@ -274,9 +287,8 @@ export default function Home() {
                     <div className={`p-1.5 rounded-md mr-2 ${
                       mode === 'dark' ? 'bg-indigo-900/30' : 'bg-indigo-100'
                     }`}>
-                      <svg xmlns="http://www.w3.org/2000/svg" className={`w-5 h-5 ${mode === 'dark' ? 'text-indigo-400' : 'text-indigo-600'}`} viewBox="0 0 20 20" fill="currentColor">
-                        <path fillRule="evenodd" d="M2.166 4.999A11.954 11.954 0 0010 1.944 11.954 11.954 0 0017.834 5c.11.65.166 1.32.166 2.001 0 5.225-3.34 9.67-8 11.317C5.34 16.67 2 12.225 2 7c0-.682.057-1.35.166-2.001zm11.541 3.708a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
-                      </svg>
+                      {/* Replaced SVG with Lucide icon */}
+                      <ShieldCheck className={`w-5 h-5 ${mode === 'dark' ? 'text-indigo-400' : 'text-indigo-600'}`} />
                     </div>
                     <h3 className={`text-lg font-bold transition-colors duration-300 ${
                       mode === 'dark' ? 'text-white' : 'text-indigo-900'
@@ -305,6 +317,7 @@ export default function Home() {
                   </ul>
                 </div>
 
+                {/* Nameservers Card */}
                 <div className={`p-5 rounded-lg shadow-md transition-colors duration-300 ${
                   mode === 'dark' ? 'bg-gray-750 border border-gray-700' : 'bg-white border border-indigo-100'
                 }`}>
@@ -312,9 +325,8 @@ export default function Home() {
                     <div className={`p-1.5 rounded-md mr-2 ${
                       mode === 'dark' ? 'bg-indigo-900/30' : 'bg-indigo-100'
                     }`}>
-                      <svg xmlns="http://www.w3.org/2000/svg" className={`w-5 h-5 ${mode === 'dark' ? 'text-indigo-400' : 'text-indigo-600'}`} viewBox="0 0 20 20" fill="currentColor">
-                        <path fillRule="evenodd" d="M2 5a2 2 0 012-2h12a2 2 0 012 2v10a2 2 0 01-2 2H4a2 2 0 01-2-2V5zm3.293 1.293a1 1 0 011.414 0l3 3a1 1 0 010 1.414l-3 3a1 1 0 01-1.414-1.414L7.586 10 5.293 7.707a1 1 0 010-1.414zM11 12a1 1 0 100 2h3a1 1 0 100-2h-3z" clipRule="evenodd" />
-                      </svg>
+                      {/* Replaced SVG with Lucide icon */}
+                      <Server className={`w-5 h-5 ${mode === 'dark' ? 'text-indigo-400' : 'text-indigo-600'}`} />
                     </div>
                     <h3 className={`text-lg font-bold transition-colors duration-300 ${
                       mode === 'dark' ? 'text-white' : 'text-indigo-900'
@@ -349,9 +361,8 @@ export default function Home() {
                     mode === 'dark' ? 'text-indigo-300 hover:text-indigo-200' : 'text-indigo-600 hover:text-indigo-800'
                   }`}
                 >
-                  <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" viewBox="0 0 20 20" fill="currentColor">
-                    <path fillRule="evenodd" d="M4 4a2 2 0 012-2h4.586A2 2 0 0112 2.586L15.414 6A2 2 0 0116 7.414V16a2 2 0 01-2 2H6a2 2 0 01-2-2V4zm2 6a1 1 0 011-1h6a1 1 0 110 2H7a1 1 0 01-1-1zm1 3a1 1 0 100 2h6a1 1 0 100-2H7z" clipRule="evenodd" />
-                  </svg>
+                  {/* Replaced SVG with Lucide icon */}
+                  <FileText className="h-3.5 w-3.5" />
                   View raw RDAP data
                 </a>
               </div>
@@ -373,9 +384,8 @@ export default function Home() {
           mode === 'dark' ? 'text-indigo-300' : 'text-indigo-600'
         }`}>
           <p className="flex items-center justify-center gap-1.5">
-            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z" />
-            </svg>
+            {/* Replaced SVG with Lucide icon */}
+            <Zap className="h-4 w-4" />
             Powered by IANA RDAP Data
           </p>
         </footer>
