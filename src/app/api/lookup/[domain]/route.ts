@@ -56,7 +56,7 @@ export async function GET(
     const rawData: RdapResponse = await response.json();
     
     // Process the raw data into a clean, normalized format
-    const normalizedData = normalizeRdapResponse(rawData);
+    const normalizedData = normalizeRdapResponse(rawData,baseUrl);
 
     return NextResponse.json(normalizedData);
 
