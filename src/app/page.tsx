@@ -81,6 +81,15 @@ export default function Home() {
     }
   };
 
+  // Function to get the direct RDAP domain URL
+  const getRdapDomainUrl = (baseUrl: string, domainName: string): string => {
+    const url = new URL(baseUrl);
+    // Ensure the path ends with a slash before adding 'domain/'
+    const basePath = url.pathname.endsWith('/') ? url.pathname : `${url.pathname}/`;
+    url.pathname = `${basePath}domain/${domainName}`;
+    return url.toString();
+  };
+
   return (
     <main className={`min-h-screen transition-colors duration-300 flex items-center justify-center px-4 py-8 ${
       mode === 'dark' 
@@ -168,7 +177,7 @@ export default function Home() {
             <p className="text-sm">
               Domain information retrieved from{' '}
               <a
-                href={results.rdapServer}
+                href={getRdapDomainUrl(results.rdapServer, results.domainName)}
                 target="_blank"
                 rel="noopener noreferrer"
                 className={`font-medium hover:underline ${
@@ -188,7 +197,7 @@ export default function Home() {
               : 'bg-white border-indigo-100'
           }`}>
             <section className="space-y-5">
-              <div className={`p-5 rounded-lg shadow-md transition-colors duration-300 transform hover:scale-[1.01] ${
+              <div className={`p-5 rounded-lg shadow-md transition-colors duration-300 ${
                 mode === 'dark' ? 'bg-gray-750 border border-gray-700' : 'bg-white border border-indigo-100'
               }`}>
                 <div className="flex items-center mb-3">
@@ -225,7 +234,7 @@ export default function Home() {
                 </dl>
               </div>
 
-              <div className={`p-5 rounded-lg shadow-md transition-colors duration-300 transform hover:scale-[1.01] ${
+              <div className={`p-5 rounded-lg shadow-md transition-colors duration-300 ${
                 mode === 'dark' ? 'bg-gray-750 border border-gray-700' : 'bg-white border border-indigo-100'
               }`}>
                 <div className="flex items-center mb-3">
@@ -263,7 +272,7 @@ export default function Home() {
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-                <div className={`p-5 rounded-lg shadow-md transition-colors duration-300 transform hover:scale-[1.01] ${
+                <div className={`p-5 rounded-lg shadow-md transition-colors duration-300 ${
                   mode === 'dark' ? 'bg-gray-750 border border-gray-700' : 'bg-white border border-indigo-100'
                 }`}>
                   <div className="flex items-center mb-3">
@@ -301,7 +310,7 @@ export default function Home() {
                   </ul>
                 </div>
 
-                <div className={`p-5 rounded-lg shadow-md transition-colors duration-300 transform hover:scale-[1.01] ${
+                <div className={`p-5 rounded-lg shadow-md transition-colors duration-300 ${
                   mode === 'dark' ? 'bg-gray-750 border border-gray-700' : 'bg-white border border-indigo-100'
                 }`}>
                   <div className="flex items-center mb-3">
@@ -338,7 +347,7 @@ export default function Home() {
             {results.rdapServer && (
               <div className="text-center pt-1">
                 <a
-                  href={results.rdapServer}
+                  href={getRdapDomainUrl(results.rdapServer, results.domainName)}
                   target="_blank"
                   rel="noopener noreferrer"
                   className={`text-xs inline-flex items-center gap-1 hover:underline ${
@@ -373,9 +382,6 @@ export default function Home() {
               <path strokeLinecap="round" strokeLinejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z" />
             </svg>
             Powered by IANA RDAP Data
-          </p>
-          <p className={`mt-1 ${mode === 'dark' ? 'text-slate-400' : 'text-slate-500'}`}>
-            Updated: {new Date().toISOString().split('T')[0]}
           </p>
         </footer>
       </div>
