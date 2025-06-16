@@ -49,7 +49,7 @@ GET https://whois.sayed.page/api/[domain]
 ### ✅ Example Request
 
 ```
-GET https://whois.sayed.page/api/abusayed.dev
+GET https://rdap.abusayed.dev/api/lookup/abusayed.dev
 ```
 
 
