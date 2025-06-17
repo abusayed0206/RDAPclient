@@ -20,13 +20,11 @@ export function validateIP(ip: string): IPValidationResult {
     // Try IPv4 first
     try {
       const ipv4 = new Address4(cleanIP);
-      if (ipv4.isValid()) {
-        return {
-          isValid: true,
-          version: 'IPv4',
-          normalized: ipv4.address
-        };
-      }
+      return {
+        isValid: true,
+        version: 'IPv4',
+        normalized: ipv4.address
+      };
     } catch (e) {
       // Not IPv4, try IPv6
     }
@@ -34,13 +32,11 @@ export function validateIP(ip: string): IPValidationResult {
     // Try IPv6
     try {
       const ipv6 = new Address6(cleanIP);
-      if (ipv6.isValid()) {
-        return {
-          isValid: true,
-          version: 'IPv6',
-          normalized: ipv6.address
-        };
-      }
+      return {
+        isValid: true,
+        version: 'IPv6',
+        normalized: ipv6.address
+      };
     } catch (e) {
       // Not IPv6 either
     }
@@ -65,34 +61,42 @@ export function isPrivateIP(ip: string): boolean {
   if (!validation.isValid || !validation.normalized) return false;
   
   if (validation.version === 'IPv4') {
-    const ipv4 = new Address4(validation.normalized);
-    
-    // Private IPv4 ranges:
-    // 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16
-    // 127.0.0.0/8 (loopback), 169.254.0.0/16 (link-local)
-    const privateRanges = [
-      new Address4('10.0.0.0/8'),
-      new Address4('172.16.0.0/12'),
-      new Address4('192.168.0.0/16'),
-      new Address4('127.0.0.0/8'),
-      new Address4('169.254.0.0/16')
-    ];
-    
-    return privateRanges.some(range => ipv4.isInSubnet(range));
+    try {
+      const ipv4 = new Address4(validation.normalized);
+      
+      // Private IPv4 ranges:
+      // 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16
+      // 127.0.0.0/8 (loopback), 169.254.0.0/16 (link-local)
+      const privateRanges = [
+        new Address4('10.0.0.0/8'),
+        new Address4('172.16.0.0/12'),
+        new Address4('192.168.0.0/16'),
+        new Address4('127.0.0.0/8'),
+        new Address4('169.254.0.0/16')
+      ];
+      
+      return privateRanges.some(range => ipv4.isInSubnet(range));
+    } catch (e) {
+      return false;
+    }
   }
   
   if (validation.version === 'IPv6') {
-    const ipv6 = new Address6(validation.normalized);
-    
-    // Private IPv6 ranges:
-    // fc00::/7 (unique local), fe80::/10 (link-local), ::1/128 (loopback)
-    const privateRanges = [
-      new Address6('fc00::/7'),
-      new Address6('fe80::/10'),
-      new Address6('::1/128')
-    ];
-    
-    return privateRanges.some(range => ipv6.isInSubnet(range));
+    try {
+      const ipv6 = new Address6(validation.normalized);
+      
+      // Private IPv6 ranges:
+      // fc00::/7 (unique local), fe80::/10 (link-local), ::1/128 (loopback)
+      const privateRanges = [
+        new Address6('fc00::/7'),
+        new Address6('fe80::/10'),
+        new Address6('::1/128')
+      ];
+      
+      return privateRanges.some(range => ipv6.isInSubnet(range));
+    } catch (e) {
+      return false;
+    }
   }
   
   return false;
@@ -106,29 +110,37 @@ export function isReservedIP(ip: string): boolean {
   if (!validation.isValid || !validation.normalized) return false;
   
   if (validation.version === 'IPv4') {
-    const ipv4 = new Address4(validation.normalized);
-    
-    // Reserved IPv4 ranges
-    const reservedRanges = [
-      new Address4('0.0.0.0/8'),      // "This" network
-      new Address4('224.0.0.0/4'),    // Multicast
-      new Address4('240.0.0.0/4'),    // Reserved for future use
-      new Address4('255.255.255.255/32') // Broadcast
-    ];
-    
-    return reservedRanges.some(range => ipv4.isInSubnet(range));
+    try {
+      const ipv4 = new Address4(validation.normalized);
+      
+      // Reserved IPv4 ranges
+      const reservedRanges = [
+        new Address4('0.0.0.0/8'),      // "This" network
+        new Address4('224.0.0.0/4'),    // Multicast
+        new Address4('240.0.0.0/4'),    // Reserved for future use
+        new Address4('255.255.255.255/32') // Broadcast
+      ];
+      
+      return reservedRanges.some(range => ipv4.isInSubnet(range));
+    } catch (e) {
+      return false;
+    }
   }
   
   if (validation.version === 'IPv6') {
-    const ipv6 = new Address6(validation.normalized);
-    
-    // Reserved IPv6 ranges
-    const reservedRanges = [
-      new Address6('ff00::/8'),       // Multicast
-      new Address6('::/128'),         // Unspecified
-    ];
-    
-    return reservedRanges.some(range => ipv6.isInSubnet(range));
+    try {
+      const ipv6 = new Address6(validation.normalized);
+      
+      // Reserved IPv6 ranges
+      const reservedRanges = [
+        new Address6('ff00::/8'),       // Multicast
+        new Address6('::/128'),         // Unspecified
+      ];
+      
+      return reservedRanges.some(range => ipv6.isInSubnet(range));
+    } catch (e) {
+      return false;
+    }
   }
   
   return false;
@@ -174,4 +186,4 @@ export function isIPv6InCIDR(ip: string, cidr: string): boolean {
   } catch {
     return false;
   }
-      }
+}
