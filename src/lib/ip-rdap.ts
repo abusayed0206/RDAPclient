@@ -287,6 +287,26 @@ function ipToInt(ip: string): number {
 }
 
 /**
+ * Check if IPv6 address is in range using string comparison
+ */
+function isIPv6InRange(ip: string, startIP: string, endIP: string): boolean {
+  try {
+    const ipAddr = new Address6(ip);
+    const startAddr = new Address6(startIP);
+    const endAddr = new Address6(endIP);
+    
+    // Use canonicalForm for consistent comparison
+    const ipCanonical = ipAddr.canonicalForm();
+    const startCanonical = startAddr.canonicalForm();
+    const endCanonical = endAddr.canonicalForm();
+    
+    return ipCanonical >= startCanonical && ipCanonical <= endCanonical;
+  } catch (e) {
+    return false;
+  }
+}
+
+/**
  * Find geolocation data for IP
  */
 function findGeolocation(ip: string, version: IPVersion): NormalizedIPData['location'] | undefined {
@@ -327,16 +347,10 @@ function findGeolocation(ip: string, version: IPVersion): NormalizedIPData['loca
       }
     }
   } else {
-    // For IPv6, use simple linear search (could be optimized)
-    const ipAddr = new Address6(ip);
-    
+    // For IPv6, use linear search with improved comparison
     for (const record of cache) {
       try {
-        const startAddr = new Address6(record.startIP);
-        const endAddr = new Address6(record.endIP);
-        
-        if (ipAddr.bigInteger() >= startAddr.bigInteger() && 
-            ipAddr.bigInteger() <= endAddr.bigInteger()) {
+        if (isIPv6InRange(ip, record.startIP, record.endIP)) {
           return {
             country: record.country || undefined,
             countryCode: record.countryCode || undefined,
