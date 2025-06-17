@@ -1,6 +1,6 @@
 import { Address4, Address6 } from 'ip-address';
 
-import { isPrivateIP, isReservedIP, IPVersion, validateIP } from './ip-utils';
+import { IPVersion, isPrivateIP, isReservedIP, validateIP } from './ip-utils';
 
 // Streamlined interfaces for essential data only
 export interface NormalizedIPData {
