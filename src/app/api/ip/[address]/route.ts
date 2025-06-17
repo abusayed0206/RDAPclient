@@ -7,15 +7,13 @@ export async function GET(
   { params }: { params: { address: string } }
 ) {
   const ipAddress = params.address;
-  const { searchParams } = new URL(request.url);
-  const debug = searchParams.get('debug') === 'true';
 
   if (!ipAddress) {
     return NextResponse.json({ error: 'IP address is required.' }, { status: 400 });
   }
 
   try {
-    const result = await lookupIP(ipAddress, debug);
+    const result = await lookupIP(ipAddress);
     return NextResponse.json(result);
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred';
