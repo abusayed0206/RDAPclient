@@ -1,4 +1,6 @@
-import { validateIP, isPrivateIP, isReservedIP, IPVersion } from './ip-utils';
+import { Address4, Address6 } from 'ip-address';
+
+import { isPrivateIP, isReservedIP, IPVersion, validateIP } from './ip-utils';
 
 // Streamlined interfaces for essential data only
 export interface NormalizedIPData {
@@ -37,6 +39,12 @@ interface GeoLocationRecord {
 }
 
 // RDAP Response Interfaces (simplified)
+interface RdapIPEntity {
+  handle?: string;
+  roles?: string[];
+  vcardArray?: [string, Array<[string, Record<string, unknown>, string, string]>];
+}
+
 interface RdapIPResponse {
   objectClassName: string;
   startAddress?: string;
@@ -45,11 +53,7 @@ interface RdapIPResponse {
   type?: string;
   country?: string;
   events?: { eventAction: string; eventDate: string }[];
-  entities?: {
-    handle?: string;
-    roles?: string[];
-    vcardArray?: any[];
-  }[];
+  entities?: RdapIPEntity[];
 }
 
 // Bootstrap URLs
@@ -69,8 +73,8 @@ let ipv4BootstrapCache: [string[], string[]][] | null = null;
 let ipv6BootstrapCache: [string[], string[]][] | null = null;
 let ipv4GeoCache: GeoLocationRecord[] | null = null;
 let ipv6GeoCache: GeoLocationRecord[] | null = null;
-let bootstrapCacheExpiry: number = 0;
-let geoCacheExpiry: number = 0;
+let bootstrapCacheExpiry = 0;
+let geoCacheExpiry = 0;
 
 /**
  * Fetch and cache IANA bootstrap data
@@ -103,6 +107,7 @@ async function fetchBootstrapData(): Promise<void> {
     bootstrapCacheExpiry = now + CACHE_TTL;
     
   } catch (error) {
+    // eslint-disable-next-line no-console
     console.error('Failed to fetch bootstrap data:', error);
     throw error;
   }
@@ -120,15 +125,12 @@ async function fetchGeolocationData(): Promise<void> {
   }
   
   try {
-    console.log('Fetching geolocation databases...');
-    
     const [ipv4Response, ipv6Response] = await Promise.all([
       fetch(GEOLOCATION_DB_URLS.ipv4),
       fetch(GEOLOCATION_DB_URLS.ipv6)
     ]);
     
     if (!ipv4Response.ok || !ipv6Response.ok) {
-      console.warn('Failed to fetch geolocation data, continuing without location info');
       return;
     }
     
@@ -141,9 +143,8 @@ async function fetchGeolocationData(): Promise<void> {
     ipv6GeoCache = parseGeoCSV(ipv6Text);
     geoCacheExpiry = now + CACHE_TTL;
     
-    console.log(`Loaded ${ipv4GeoCache.length} IPv4 and ${ipv6GeoCache.length} IPv6 geo records`);
-    
   } catch (error) {
+    // eslint-disable-next-line no-console
     console.error('Failed to fetch geolocation data:', error);
     // Don't throw - geo data is optional
   }
@@ -217,8 +218,6 @@ function findRdapServerForIP(ip: string, version: IPVersion): string | null {
     throw new Error('Bootstrap data not loaded');
   }
   
-  const { Address4, Address6 } = require('ip-address');
-  
   for (const [cidrs, urls] of cache) {
     for (const cidr of cidrs) {
       try {
@@ -273,6 +272,7 @@ async function queryRdapServer(ip: string, rdapServerUrl: string): Promise<RdapI
     return await response.json();
     
   } catch (error) {
+    // eslint-disable-next-line no-console
     console.error(`RDAP query failed for ${ip}:`, error);
     throw error;
   }
@@ -328,7 +328,6 @@ function findGeolocation(ip: string, version: IPVersion): NormalizedIPData['loca
     }
   } else {
     // For IPv6, use simple linear search (could be optimized)
-    const { Address6 } = require('ip-address');
     const ipAddr = new Address6(ip);
     
     for (const record of cache) {
@@ -360,14 +359,14 @@ function findGeolocation(ip: string, version: IPVersion): NormalizedIPData['loca
 /**
  * Extract organization from RDAP entities
  */
-function extractOrganization(entities: any[]): string | undefined {
+function extractOrganization(entities: RdapIPEntity[]): string | undefined {
   for (const entity of entities) {
     if (entity.vcardArray && Array.isArray(entity.vcardArray[1])) {
       const vcard = entity.vcardArray[1];
       
       // Look for organization or full name
-      const org = vcard.find((item: any) => Array.isArray(item) && item[0] === 'org');
-      const fn = vcard.find((item: any) => Array.isArray(item) && item[0] === 'fn');
+      const org = vcard.find(item => Array.isArray(item) && item[0] === 'org');
+      const fn = vcard.find(item => Array.isArray(item) && item[0] === 'fn');
       
       if (org && typeof org[3] === 'string') return org[3];
       if (fn && typeof fn[3] === 'string') return fn[3];
@@ -461,7 +460,8 @@ export async function lookupIP(ip: string): Promise<NormalizedIPData> {
     
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
+    // eslint-disable-next-line no-console
     console.error(`IP lookup failed for ${normalizedIP}:`, error);
     throw new Error(errorMessage);
   }
-            }
+}
