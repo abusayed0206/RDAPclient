@@ -1,5 +1,5 @@
-
 import { NextResponse } from 'next/server';
+
 import { lookupIP } from '@/lib/ip-rdap';
 
 export async function GET(
@@ -17,6 +17,7 @@ export async function GET(
     return NextResponse.json(result);
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred';
+    // eslint-disable-next-line no-console
     console.error(`IP lookup error for ${ipAddress}:`, error);
     
     // Determine appropriate status code
