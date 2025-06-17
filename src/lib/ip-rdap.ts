@@ -23,6 +23,11 @@ export interface NormalizedIPData {
     timezone?: string;
   };
   rdapServer: string;
+  debug?: {
+    geoRecordsLoaded?: number;
+    geoSearched?: boolean;
+    geoError?: string;
+  };
 }
 
 // Geolocation database interfaces
@@ -125,12 +130,17 @@ async function fetchGeolocationData(): Promise<void> {
   }
   
   try {
+    // eslint-disable-next-line no-console
+    console.log('Fetching geolocation databases...');
+    
     const [ipv4Response, ipv6Response] = await Promise.all([
       fetch(GEOLOCATION_DB_URLS.ipv4),
       fetch(GEOLOCATION_DB_URLS.ipv6)
     ]);
     
     if (!ipv4Response.ok || !ipv6Response.ok) {
+      // eslint-disable-next-line no-console
+      console.warn('Failed to fetch geolocation data, continuing without location info');
       return;
     }
     
@@ -143,6 +153,9 @@ async function fetchGeolocationData(): Promise<void> {
     ipv6GeoCache = parseGeoCSV(ipv6Text);
     geoCacheExpiry = now + CACHE_TTL;
     
+    // eslint-disable-next-line no-console
+    console.log(`Loaded ${ipv4GeoCache.length} IPv4 and ${ipv6GeoCache.length} IPv6 geo records`);
+    
   } catch (error) {
     // eslint-disable-next-line no-console
     console.error('Failed to fetch geolocation data:', error);
@@ -151,7 +164,7 @@ async function fetchGeolocationData(): Promise<void> {
 }
 
 /**
- * Parse geolocation CSV data
+ * Parse geolocation CSV data with better error handling
  */
 function parseGeoCSV(csvText: string): GeoLocationRecord[] {
   const lines = csvText.trim().split('\n');
@@ -162,23 +175,45 @@ function parseGeoCSV(csvText: string): GeoLocationRecord[] {
     const line = lines[i];
     if (!line.trim()) continue;
     
-    // Parse CSV (handle quoted fields)
-    const fields = parseCSVLine(line);
-    
-    if (fields.length >= 8) {
-      records.push({
-        startIP: fields[0],
-        endIP: fields[1],
-        countryCode: fields[2] || '',
-        country: fields[3] || '',
-        region: fields[4] || '',
-        city: fields[5] || '',
-        latitude: parseFloat(fields[6]) || 0,
-        longitude: parseFloat(fields[7]) || 0,
-        timezone: fields[8] || ''
-      });
+    try {
+      // Parse CSV (handle quoted fields)
+      const fields = parseCSVLine(line);
+      
+      if (fields.length >= 9) { // Ensure we have enough fields
+        const record: GeoLocationRecord = {
+          startIP: fields[0],
+          endIP: fields[1],
+          countryCode: fields[2] || '',
+          country: fields[3] || '',
+          region: fields[4] || '',
+          city: fields[5] || '',
+          latitude: parseFloat(fields[6]) || 0,
+          longitude: parseFloat(fields[7]) || 0,
+          timezone: fields[8] || ''
+        };
+        
+        // Only add valid records
+        if (record.startIP && record.endIP) {
+          records.push(record);
+        }
+      }
+    } catch (e) {
+      // Skip malformed lines
+      continue;
     }
   }
+  
+  // Sort IPv4 records by start IP for binary search
+  records.sort((a, b) => {
+    try {
+      if (a.startIP.includes('.') && b.startIP.includes('.')) {
+        return ipToInt(a.startIP) - ipToInt(b.startIP);
+      }
+    } catch (e) {
+      // Fallback to string comparison
+    }
+    return a.startIP.localeCompare(b.startIP);
+  });
   
   return records;
 }
@@ -197,14 +232,14 @@ function parseCSVLine(line: string): string[] {
     if (char === '"') {
       inQuotes = !inQuotes;
     } else if (char === ',' && !inQuotes) {
-      fields.push(current.trim());
+      fields.push(current.trim().replace(/^"|"$/g, '')); // Remove surrounding quotes
       current = '';
     } else {
       current += char;
     }
   }
   
-  fields.push(current.trim());
+  fields.push(current.trim().replace(/^"|"$/g, '')); // Remove surrounding quotes
   return fields;
 }
 
@@ -307,58 +342,82 @@ function isIPv6InRange(ip: string, startIP: string, endIP: string): boolean {
 }
 
 /**
- * Find geolocation data for IP
+ * Find geolocation data for IP with better debugging
  */
-function findGeolocation(ip: string, version: IPVersion): NormalizedIPData['location'] | undefined {
+function findGeolocation(ip: string, version: IPVersion): { location?: NormalizedIPData['location']; debug: any } {
   const cache = version === 'IPv4' ? ipv4GeoCache : ipv6GeoCache;
   
+  const debug = {
+    geoRecordsLoaded: cache?.length || 0,
+    geoSearched: false,
+    geoError: undefined as string | undefined
+  };
+  
   if (!cache || cache.length === 0) {
-    return undefined;
+    debug.geoError = 'No geolocation cache available';
+    return { debug };
   }
   
+  debug.geoSearched = true;
+  
   if (version === 'IPv4') {
-    const ipInt = ipToInt(ip);
-    
-    // Binary search for efficiency
-    let left = 0;
-    let right = cache.length - 1;
-    
-    while (left <= right) {
-      const mid = Math.floor((left + right) / 2);
-      const record = cache[mid];
+    try {
+      const ipInt = ipToInt(ip);
       
-      const startInt = ipToInt(record.startIP);
-      const endInt = ipToInt(record.endIP);
+      // Binary search for efficiency
+      let left = 0;
+      let right = cache.length - 1;
       
-      if (ipInt >= startInt && ipInt <= endInt) {
-        return {
-          country: record.country || undefined,
-          countryCode: record.countryCode || undefined,
-          region: record.region || undefined,
-          city: record.city || undefined,
-          latitude: record.latitude || undefined,
-          longitude: record.longitude || undefined,
-          timezone: record.timezone || undefined
-        };
-      } else if (ipInt < startInt) {
-        right = mid - 1;
-      } else {
-        left = mid + 1;
+      while (left <= right) {
+        const mid = Math.floor((left + right) / 2);
+        const record = cache[mid];
+        
+        try {
+          const startInt = ipToInt(record.startIP);
+          const endInt = ipToInt(record.endIP);
+          
+          if (ipInt >= startInt && ipInt <= endInt) {
+            return {
+              location: {
+                country: record.country || undefined,
+                countryCode: record.countryCode || undefined,
+                region: record.region || undefined,
+                city: record.city || undefined,
+                latitude: record.latitude || undefined,
+                longitude: record.longitude || undefined,
+                timezone: record.timezone || undefined
+              },
+              debug
+            };
+          } else if (ipInt < startInt) {
+            right = mid - 1;
+          } else {
+            left = mid + 1;
+          }
+        } catch (e) {
+          continue;
+        }
       }
+    } catch (e) {
+      debug.geoError = `IPv4 search error: ${e}`;
     }
   } else {
     // For IPv6, use linear search with improved comparison
-    for (const record of cache) {
+    for (let i = 0; i < Math.min(cache.length, 10000); i++) { // Limit search for performance
+      const record = cache[i];
       try {
         if (isIPv6InRange(ip, record.startIP, record.endIP)) {
           return {
-            country: record.country || undefined,
-            countryCode: record.countryCode || undefined,
-            region: record.region || undefined,
-            city: record.city || undefined,
-            latitude: record.latitude || undefined,
-            longitude: record.longitude || undefined,
-            timezone: record.timezone || undefined
+            location: {
+              country: record.country || undefined,
+              countryCode: record.countryCode || undefined,
+              region: record.region || undefined,
+              city: record.city || undefined,
+              latitude: record.latitude || undefined,
+              longitude: record.longitude || undefined,
+              timezone: record.timezone || undefined
+            },
+            debug
           };
         }
       } catch (e) {
@@ -367,7 +426,8 @@ function findGeolocation(ip: string, version: IPVersion): NormalizedIPData['loca
     }
   }
   
-  return undefined;
+  debug.geoError = 'IP not found in geolocation database';
+  return { debug };
 }
 
 /**
@@ -392,7 +452,7 @@ function extractOrganization(entities: RdapIPEntity[]): string | undefined {
 /**
  * Main function to lookup IP information
  */
-export async function lookupIP(ip: string): Promise<NormalizedIPData> {
+export async function lookupIP(ip: string, includeDebug = false): Promise<NormalizedIPData> {
   // Validate IP address
   const validation = validateIP(ip);
   if (!validation.isValid || !validation.version || !validation.normalized) {
@@ -449,8 +509,8 @@ export async function lookupIP(ip: string): Promise<NormalizedIPData> {
       }
     }
     
-    // Get geolocation data
-    const location = findGeolocation(normalizedIP, version);
+    // Get geolocation data with debugging
+    const geoResult = findGeolocation(normalizedIP, version);
     
     // Build streamlined response
     const result: NormalizedIPData = {
@@ -466,8 +526,12 @@ export async function lookupIP(ip: string): Promise<NormalizedIPData> {
       rdapServer
     };
     
-    if (location) {
-      result.location = location;
+    if (geoResult.location) {
+      result.location = geoResult.location;
+    }
+    
+    if (includeDebug) {
+      result.debug = geoResult.debug;
     }
     
     return result;
