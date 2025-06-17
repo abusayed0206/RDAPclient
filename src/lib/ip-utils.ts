@@ -139,7 +139,7 @@ export function isReservedIP(ip: string): boolean {
  */
 export function getIPVersion(ip: string): IPVersion | null {
   const validation = validateIP(ip);
-  return validation.isValid ? validation.version! : null;
+  return validation.isValid ? (validation.version || null) : null;
 }
 
 /**
@@ -174,4 +174,4 @@ export function isIPv6InCIDR(ip: string, cidr: string): boolean {
   } catch {
     return false;
   }
-}
+      }
