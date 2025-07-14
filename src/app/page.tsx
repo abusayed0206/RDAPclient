@@ -1,17 +1,14 @@
 'use client';
 
 import {
-  Building,
   Clock,
   FileText,
   Globe,
-  MapPin,
   Moon,
   Search,
   Server,
   ShieldCheck,
   Sun,
-  Wifi,
   Zap,
 } from 'lucide-react';
 import { useEffect, useState } from 'react';
@@ -34,36 +31,17 @@ interface IPData {
   rdapServer: string;
 }
 
-interface GeoData {
-  ip: string;
-  country: string;
-  countryCode: string;
-  region: string;
-  city: string;
-  zipCode: string;
-  latitude: number;
-  longitude: number;
-  timezone: string;
-  isp: string;
-  organization: string;
-  asn: string;
-  dataSource: string;
-  disclaimer: string;
-}
-
 type LookupType = 'domain' | 'ip';
 
 export default function Home() {
   const [lookupType, setLookupType] = useState<LookupType>('domain');
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  const [isGeoLoading, setIsGeoLoading] = useState(false);
   const [status, setStatus] = useState({ message: '', type: 'info' });
   const [domainResults, setDomainResults] = useState<NormalizedRdapData | null>(
     null,
   );
   const [ipResults, setIpResults] = useState<IPData | null>(null);
-  const [geoResults, setGeoResults] = useState<GeoData | null>(null);
   const [mode, setMode] = useState<'dark' | 'light'>('light');
 
   useEffect(() => {
@@ -99,9 +77,9 @@ export default function Home() {
   const clearResults = () => {
     setDomainResults(null);
     setIpResults(null);
-    setGeoResults(null);
+
     setStatus({
-      message: `Ready to look up ${lookupType === 'domain' ? 'domains' : 'IP addresses'}.`,
+      message: `Ready to look up ${lookupType === 'domain' ? 'IP addresses' : 'domains'}.`,
       type: 'success',
     });
   };
@@ -203,27 +181,6 @@ export default function Home() {
     }
   };
 
-  const fetchGeolocation = async () => {
-    if (!ipResults) return;
-
-    setIsGeoLoading(true);
-    try {
-      const response = await fetch(`/api/geo/${ipResults.ip}`);
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.error || 'Geolocation API error.');
-      setGeoResults(data);
-    } catch (error: unknown) {
-      // eslint-disable-next-line no-console
-      console.error('Geolocation lookup failed:', error);
-      setStatus({
-        message: (error as Error).message || 'Geolocation lookup failed.',
-        type: 'error',
-      });
-    } finally {
-      setIsGeoLoading(false);
-    }
-  };
-
   const getStatusColor = (type: string) => {
     switch (type) {
       case 'success':
@@ -270,10 +227,11 @@ export default function Home() {
             : 'border border-indigo-100 bg-white'
         }`}
       >
-        <div className='absolute right-4 top-4'>
-          <button
-            onClick={toggleMode}
-            className={`
+        <header className='mb-8 text-center'>
+          <div className='right-4 top-4'>
+            <button
+              onClick={toggleMode}
+              className={`
               inline-flex items-center justify-center rounded-full p-2 text-lg font-semibold
               transition-colors duration-300
               ${
@@ -282,26 +240,16 @@ export default function Home() {
                   : 'text-indigo-600 hover:bg-indigo-50 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 focus:ring-offset-white'
               }
             `}
-            aria-label={`Switch to ${mode === 'dark' ? 'light' : 'dark'} mode`}
-          >
-            {mode === 'dark' ? (
-              <Sun className='h-6 w-6' />
-            ) : (
-              <Moon className='h-6 w-6' />
-            )}
-          </button>
-        </div>
-
-        <header className='mb-8 text-center'>
-          <div
-            className={`mb-4 inline-block rounded-full p-2 ${
-              mode === 'dark' ? 'bg-indigo-900/30' : 'bg-indigo-100'
-            }`}
-          >
-            <Search
-              className={`h-8 w-8 ${mode === 'dark' ? 'text-indigo-400' : 'text-indigo-600'}`}
-            />
+              aria-label={`Switch to ${mode === 'dark' ? 'light' : 'dark'} mode`}
+            >
+              {mode === 'dark' ? (
+                <Sun className='h-6 w-6' />
+              ) : (
+                <Moon className='h-6 w-6' />
+              )}
+            </button>
           </div>
+
           <h1
             className={`text-3xl font-bold transition-colors duration-300 md:text-4xl ${
               mode === 'dark' ? 'text-white' : 'text-indigo-900'
@@ -741,40 +689,12 @@ export default function Home() {
                   }`}
                 >
                   <FileText className='h-3.5 w-3.5' />
-                  View raw RDAP data
+                  RAW JSON
                 </a>
               </div>
             )}
           </div>
         )}
-
-        <div className='mt-3'>
-          <button
-            onClick={fetchGeolocation}
-            disabled={isGeoLoading}
-            className={`
-                  mx-auto flex items-center justify-center gap-2
-                  rounded-md px-4 py-2 text-sm font-medium
-                  transition-colors duration-300
-                  ${
-                    isGeoLoading
-                      ? 'cursor-not-allowed bg-indigo-400'
-                      : mode === 'dark'
-                        ? 'bg-indigo-600 text-white hover:bg-indigo-700'
-                        : 'bg-indigo-600 text-white hover:bg-indigo-700'
-                  }
-                `}
-          >
-            {isGeoLoading ? (
-              <div className='h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent' />
-            ) : (
-              <>
-                <MapPin className='h-4 w-4' />
-                <span>Get Location Data</span>
-              </>
-            )}
-          </button>
-        </div>
 
         {/* IP Results Display */}
         {ipResults && (
@@ -1015,232 +935,8 @@ export default function Home() {
                 }`}
               >
                 <FileText className='h-3.5 w-3.5' />
-                View raw RDAP data
+                RAW JSON
               </a>
-            </div>
-          </div>
-        )}
-
-        {/* Geolocation Results Display */}
-        {geoResults && (
-          <div
-            className={`mt-6 w-full space-y-4 rounded-xl border p-6 transition-colors duration-300 ${
-              mode === 'dark'
-                ? 'border-amber-700/50 bg-gradient-to-br from-amber-900/20 to-orange-900/20'
-                : 'border-amber-200 bg-gradient-to-br from-amber-50 to-orange-50'
-            }`}
-          >
-            {/* Disclaimer */}
-            <div
-              className={`rounded-lg border p-3 transition-colors duration-300 ${
-                mode === 'dark'
-                  ? 'border-amber-700 bg-amber-900/30 text-amber-200'
-                  : 'border-amber-300 bg-amber-100 text-amber-800'
-              }`}
-            >
-              <p className='text-sm'>
-                <strong>Disclaimer:</strong> {geoResults.disclaimer}
-              </p>
-            </div>
-
-            <section className='space-y-5'>
-              {/* Location Details Card */}
-              <div
-                className={`rounded-lg p-5 shadow-md transition-colors duration-300 ${
-                  mode === 'dark'
-                    ? 'bg-gray-750 border border-gray-700'
-                    : 'border border-amber-200 bg-white'
-                }`}
-              >
-                <div className='mb-3 flex items-center'>
-                  <div
-                    className={`mr-2 rounded-md p-1.5 ${
-                      mode === 'dark' ? 'bg-amber-900/30' : 'bg-amber-100'
-                    }`}
-                  >
-                    <MapPin
-                      className={`h-5 w-5 ${mode === 'dark' ? 'text-amber-400' : 'text-amber-600'}`}
-                    />
-                  </div>
-                  <h3
-                    className={`text-lg font-bold transition-colors duration-300 ${
-                      mode === 'dark' ? 'text-white' : 'text-amber-900'
-                    }`}
-                  >
-                    Location Information
-                  </h3>
-                </div>
-                <dl className='grid grid-cols-1 gap-x-4 gap-y-3 text-sm sm:grid-cols-2'>
-                  <dt
-                    className={`font-medium transition-colors duration-300 ${
-                      mode === 'dark' ? 'text-amber-200' : 'text-amber-700'
-                    }`}
-                  >
-                    Country
-                  </dt>
-                  <dd
-                    className={`transition-colors duration-300 ${
-                      mode === 'dark' ? 'text-slate-200' : 'text-slate-900'
-                    }`}
-                  >
-                    {geoResults.country} ({geoResults.countryCode})
-                  </dd>
-                  <dt
-                    className={`font-medium transition-colors duration-300 ${
-                      mode === 'dark' ? 'text-amber-200' : 'text-amber-700'
-                    }`}
-                  >
-                    Region
-                  </dt>
-                  <dd
-                    className={`transition-colors duration-300 ${
-                      mode === 'dark' ? 'text-slate-200' : 'text-slate-900'
-                    }`}
-                  >
-                    {geoResults.region}
-                  </dd>
-                  <dt
-                    className={`font-medium transition-colors duration-300 ${
-                      mode === 'dark' ? 'text-amber-200' : 'text-amber-700'
-                    }`}
-                  >
-                    City
-                  </dt>
-                  <dd
-                    className={`transition-colors duration-300 ${
-                      mode === 'dark' ? 'text-slate-200' : 'text-slate-900'
-                    }`}
-                  >
-                    {geoResults.city}
-                  </dd>
-                  <dt
-                    className={`font-medium transition-colors duration-300 ${
-                      mode === 'dark' ? 'text-amber-200' : 'text-amber-700'
-                    }`}
-                  >
-                    Zip Code
-                  </dt>
-                  <dd
-                    className={`transition-colors duration-300 ${
-                      mode === 'dark' ? 'text-slate-200' : 'text-slate-900'
-                    }`}
-                  >
-                    {geoResults.zipCode || 'N/A'}
-                  </dd>
-                  <dt
-                    className={`font-medium transition-colors duration-300 ${
-                      mode === 'dark' ? 'text-amber-200' : 'text-amber-700'
-                    }`}
-                  >
-                    Coordinates
-                  </dt>
-                  <dd
-                    className={`font-mono transition-colors duration-300 ${
-                      mode === 'dark' ? 'text-slate-200' : 'text-slate-900'
-                    }`}
-                  >
-                    {geoResults.latitude}, {geoResults.longitude}
-                  </dd>
-                  <dt
-                    className={`font-medium transition-colors duration-300 ${
-                      mode === 'dark' ? 'text-amber-200' : 'text-amber-700'
-                    }`}
-                  >
-                    Timezone
-                  </dt>
-                  <dd
-                    className={`transition-colors duration-300 ${
-                      mode === 'dark' ? 'text-slate-200' : 'text-slate-900'
-                    }`}
-                  >
-                    {geoResults.timezone}
-                  </dd>
-                </dl>
-              </div>
-
-              {/* ISP Details Card */}
-              <div
-                className={`rounded-lg p-5 shadow-md transition-colors duration-300 ${
-                  mode === 'dark'
-                    ? 'bg-gray-750 border border-gray-700'
-                    : 'border border-amber-200 bg-white'
-                }`}
-              >
-                <div className='mb-3 flex items-center'>
-                  <div
-                    className={`mr-2 rounded-md p-1.5 ${
-                      mode === 'dark' ? 'bg-amber-900/30' : 'bg-amber-100'
-                    }`}
-                  >
-                    <Wifi
-                      className={`h-5 w-5 ${mode === 'dark' ? 'text-amber-400' : 'text-amber-600'}`}
-                    />
-                  </div>
-                  <h3
-                    className={`text-lg font-bold transition-colors duration-300 ${
-                      mode === 'dark' ? 'text-white' : 'text-amber-900'
-                    }`}
-                  >
-                    ISP Information
-                  </h3>
-                </div>
-                <dl className='grid grid-cols-1 gap-x-4 gap-y-3 text-sm'>
-                  <dt
-                    className={`font-medium transition-colors duration-300 ${
-                      mode === 'dark' ? 'text-amber-200' : 'text-amber-700'
-                    }`}
-                  >
-                    Internet Service Provider
-                  </dt>
-                  <dd
-                    className={`transition-colors duration-300 ${
-                      mode === 'dark' ? 'text-slate-200' : 'text-slate-900'
-                    }`}
-                  >
-                    {geoResults.isp}
-                  </dd>
-                  <dt
-                    className={`font-medium transition-colors duration-300 ${
-                      mode === 'dark' ? 'text-amber-200' : 'text-amber-700'
-                    }`}
-                  >
-                    Organization
-                  </dt>
-                  <dd
-                    className={`transition-colors duration-300 ${
-                      mode === 'dark' ? 'text-slate-200' : 'text-slate-900'
-                    }`}
-                  >
-                    {geoResults.organization}
-                  </dd>
-                  <dt
-                    className={`font-medium transition-colors duration-300 ${
-                      mode === 'dark' ? 'text-amber-200' : 'text-amber-700'
-                    }`}
-                  >
-                    ASN
-                  </dt>
-                  <dd
-                    className={`font-mono transition-colors duration-300 ${
-                      mode === 'dark' ? 'text-slate-200' : 'text-slate-900'
-                    }`}
-                  >
-                    {geoResults.asn}
-                  </dd>
-                </dl>
-              </div>
-            </section>
-
-            {/* Data Source */}
-            <div className='pt-1 text-center'>
-              <p
-                className={`text-xs ${
-                  mode === 'dark' ? 'text-amber-300' : 'text-amber-700'
-                }`}
-              >
-                <Building className='mr-1 inline h-3.5 w-3.5' />
-                Geolocation data provided by {geoResults.dataSource}
-              </p>
             </div>
           </div>
         )}
