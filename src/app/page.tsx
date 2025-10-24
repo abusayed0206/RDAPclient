@@ -39,6 +39,7 @@ interface IPData {
     roles?: string[];
     name?: string;
     email?: string;
+    organization?: string;
   }>;
   remarks?: Array<{
     title?: string;
