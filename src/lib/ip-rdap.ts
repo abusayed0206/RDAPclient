@@ -1,8 +1,9 @@
 import { Address4, Address6 } from 'ip-address';
 
 import { IPVersion, isPrivateIP, isReservedIP, validateIP } from './ip-utils';
+import { fetchBootstrapData } from './rdap-bootstrap';
 
-// Simplified interface for RDAP-only data
+// Enhanced interface for RDAP data with more details
 export interface NormalizedIPData {
   ip: string;
   type: IPVersion;
@@ -14,7 +15,26 @@ export interface NormalizedIPData {
     registrar?: string;
     registrationDate?: string;
     lastChanged?: string;
+    type?: string;
+    status?: string[];
   };
+  entities?: Array<{
+    handle?: string;
+    roles?: string[];
+    name?: string;
+    email?: string;
+    organization?: string;
+  }>;
+  remarks?: Array<{
+    title?: string;
+    description?: string[];
+  }>;
+  links?: Array<{
+    value?: string;
+    rel?: string;
+    href?: string;
+    type?: string;
+  }>;
   rdapServer: string;
 }
 
@@ -35,66 +55,34 @@ interface RdapIPResponse {
   name?: string;
   type?: string;
   country?: string;
+  status?: string[];
   events?: { eventAction: string; eventDate: string }[];
   entities?: RdapIPEntity[];
+  remarks?: Array<{
+    title?: string;
+    description?: string[];
+  }>;
+  links?: Array<{
+    value?: string;
+    rel?: string;
+    href?: string;
+    type?: string;
+  }>;
 }
 
-// Bootstrap URLs
-const IANA_BOOTSTRAP_URLS = {
-  ipv4: 'https://data.iana.org/rdap/ipv4.json',
-  ipv6: 'https://data.iana.org/rdap/ipv6.json',
-};
-
-// Cache variables
-let ipv4BootstrapCache: [string[], string[]][] | null = null;
-let ipv6BootstrapCache: [string[], string[]][] | null = null;
-let bootstrapCacheExpiry = 0;
-
-/**
- * Fetch and cache IANA bootstrap data
- */
-async function fetchBootstrapData(): Promise<void> {
-  const now = Date.now();
-  const CACHE_TTL = 24 * 60 * 60 * 1000; // 24 hours
-
-  if (ipv4BootstrapCache && ipv6BootstrapCache && now < bootstrapCacheExpiry) {
-    return;
-  }
-
-  try {
-    const [ipv4Response, ipv6Response] = await Promise.all([
-      fetch(IANA_BOOTSTRAP_URLS.ipv4),
-      fetch(IANA_BOOTSTRAP_URLS.ipv6),
-    ]);
-
-    if (!ipv4Response.ok || !ipv6Response.ok) {
-      throw new Error('Failed to fetch IANA bootstrap data');
-    }
-
-    const [ipv4Data, ipv6Data] = await Promise.all([
-      ipv4Response.json(),
-      ipv6Response.json(),
-    ]);
-
-    ipv4BootstrapCache = ipv4Data.services;
-    ipv6BootstrapCache = ipv6Data.services;
-    bootstrapCacheExpiry = now + CACHE_TTL;
-  } catch (error) {
-    // eslint-disable-next-line no-console
-    console.error('Failed to fetch bootstrap data:', error);
-    throw error;
-  }
-}
+// Using centralized bootstrap utility
 
 /**
  * Find RDAP server for IP
  */
-function findRdapServerForIP(ip: string, version: IPVersion): string | null {
-  const cache = version === 'IPv4' ? ipv4BootstrapCache : ipv6BootstrapCache;
-
-  if (!cache) {
-    throw new Error('Bootstrap data not loaded');
-  }
+async function findRdapServerForIP(
+  ip: string,
+  version: IPVersion,
+): Promise<string | null> {
+  const bootstrapData = await fetchBootstrapData(
+    version === 'IPv4' ? 'ipv4' : 'ipv6',
+  );
+  const cache = bootstrapData.services;
 
   for (const [cidrs, urls] of cache) {
     for (const cidr of cidrs) {
@@ -190,6 +178,44 @@ function extractOrganization(entities: RdapIPEntity[]): string | undefined {
 }
 
 /**
+ * Extract entity details from RDAP entity
+ */
+function extractEntityDetails(entity: RdapIPEntity): {
+  handle?: string;
+  roles?: string[];
+  name?: string;
+  email?: string;
+  organization?: string;
+} {
+  const result: {
+    handle?: string;
+    roles?: string[];
+    name?: string;
+    email?: string;
+    organization?: string;
+  } = {
+    handle: entity.handle,
+    roles: entity.roles,
+  };
+
+  if (entity.vcardArray && Array.isArray(entity.vcardArray[1])) {
+    const vcard = entity.vcardArray[1];
+
+    const fn = vcard.find((item) => Array.isArray(item) && item[0] === 'fn');
+    const email = vcard.find(
+      (item) => Array.isArray(item) && item[0] === 'email',
+    );
+    const org = vcard.find((item) => Array.isArray(item) && item[0] === 'org');
+
+    if (fn && typeof fn[3] === 'string') result.name = fn[3];
+    if (email && typeof email[3] === 'string') result.email = email[3];
+    if (org && typeof org[3] === 'string') result.organization = org[3];
+  }
+
+  return result;
+}
+
+/**
  * Extract date from RDAP events
  */
 function extractDate(
@@ -223,11 +249,8 @@ export async function lookupIP(ip: string): Promise<NormalizedIPData> {
   }
 
   try {
-    // Load bootstrap data
-    await fetchBootstrapData();
-
     // Find appropriate RDAP server
-    const rdapServer = findRdapServerForIP(normalizedIP, version);
+    const rdapServer = await findRdapServerForIP(normalizedIP, version);
     if (!rdapServer) {
       throw new Error(`No RDAP server found for IP ${normalizedIP}`);
     }
@@ -261,7 +284,10 @@ export async function lookupIP(ip: string): Promise<NormalizedIPData> {
       }
     }
 
-    // Build response with RDAP data only
+    // Extract entity details
+    const entities = rdapData.entities?.map(extractEntityDetails);
+
+    // Build response with enhanced RDAP data
     const result: NormalizedIPData = {
       ip: normalizedIP,
       type: version,
@@ -275,7 +301,12 @@ export async function lookupIP(ip: string): Promise<NormalizedIPData> {
         lastChanged:
           extractDate(rdapData.events, 'last changed') ||
           extractDate(rdapData.events, 'last update'),
+        type: rdapData.type,
+        status: rdapData.status,
       },
+      entities,
+      remarks: rdapData.remarks,
+      links: rdapData.links,
       rdapServer,
     };
 
