@@ -1,9 +1,6 @@
-// Centralized IANA RDAP Bootstrap Data Management
+// IANA RDAP bootstrap registries (RFC 9224), cached in memory per server instance.
 
-export interface BootstrapService {
-  ranges: string[];
-  urls: string[];
-}
+import { RdapError } from './rdap-common';
 
 export interface BootstrapData {
   description: string;
@@ -12,84 +9,70 @@ export interface BootstrapData {
   version: string;
 }
 
-// IANA Bootstrap URLs
 export const IANA_BOOTSTRAP_URLS = {
   ipv4: 'https://data.iana.org/rdap/ipv4.json',
   ipv6: 'https://data.iana.org/rdap/ipv6.json',
   asn: 'https://data.iana.org/rdap/asn.json',
   dns: 'https://data.iana.org/rdap/dns.json',
-  objectTags: 'https://data.iana.org/rdap/object-tags.json',
 } as const;
 
-// Cache storage
-interface CacheEntry<T> {
-  data: T;
-  expiry: number;
-}
+export type BootstrapType = keyof typeof IANA_BOOTSTRAP_URLS;
 
-const bootstrapCache = new Map<string, CacheEntry<BootstrapData>>();
-const CACHE_TTL = 24 * 60 * 60 * 1000; // 24 hours
+const CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 
-/**
- * Fetch and cache IANA bootstrap data
- */
-export async function fetchBootstrapData(
-  type: keyof typeof IANA_BOOTSTRAP_URLS,
-): Promise<BootstrapData> {
-  const now = Date.now();
-  const cached = bootstrapCache.get(type);
+const cache = new Map<BootstrapType, { data: BootstrapData; expiry: number }>();
+const inFlight = new Map<BootstrapType, Promise<BootstrapData>>();
 
-  // Return cached data if still valid
-  if (cached && now < cached.expiry) {
-    return cached.data;
-  }
-
+async function download(type: BootstrapType): Promise<BootstrapData> {
+  let response: Response;
   try {
-    const response = await fetch(IANA_BOOTSTRAP_URLS[type]);
-
-    if (!response.ok) {
-      throw new Error(`Failed to fetch ${type} bootstrap data`);
-    }
-
-    const data: BootstrapData = await response.json();
-
-    // Cache the data
-    bootstrapCache.set(type, {
-      data,
-      expiry: now + CACHE_TTL,
+    response = await fetch(IANA_BOOTSTRAP_URLS[type], {
+      signal: AbortSignal.timeout(10_000),
+      next: { revalidate: CACHE_TTL_MS / 1000 },
     });
-
-    return data;
-  } catch (error) {
-    // eslint-disable-next-line no-console
-    console.error(`Failed to fetch ${type} bootstrap data:`, error);
-    throw error;
+  } catch {
+    throw new RdapError(
+      'Could not load the IANA RDAP bootstrap registry.',
+      502,
+      'bootstrap',
+    );
   }
+  if (!response.ok) {
+    throw new RdapError(
+      `IANA bootstrap registry returned HTTP ${response.status}.`,
+      502,
+      'bootstrap',
+    );
+  }
+  return (await response.json()) as BootstrapData;
 }
 
-/**
- * Clear all bootstrap caches
- */
+/** Fetch a bootstrap registry, reusing a fresh cached copy and de-duplicating concurrent loads. */
+export async function fetchBootstrapData(
+  type: BootstrapType,
+): Promise<BootstrapData> {
+  const cached = cache.get(type);
+  if (cached && Date.now() < cached.expiry) return cached.data;
+
+  const pending = inFlight.get(type);
+  if (pending) return pending;
+
+  const request = download(type)
+    .then((data) => {
+      cache.set(type, { data, expiry: Date.now() + CACHE_TTL_MS });
+      return data;
+    })
+    .catch((error) => {
+      // Serve a stale copy rather than failing if IANA is briefly unreachable.
+      if (cached) return cached.data;
+      throw error;
+    })
+    .finally(() => inFlight.delete(type));
+
+  inFlight.set(type, request);
+  return request;
+}
+
 export function clearBootstrapCache(): void {
-  bootstrapCache.clear();
-}
-
-/**
- * Get cache statistics
- */
-export function getCacheStats(): {
-  size: number;
-  entries: { type: string; expiry: Date }[];
-} {
-  const entries = Array.from(bootstrapCache.entries()).map(
-    ([type, { expiry }]) => ({
-      type,
-      expiry: new Date(expiry),
-    }),
-  );
-
-  return {
-    size: bootstrapCache.size,
-    entries,
-  };
+  cache.clear();
 }

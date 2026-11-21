@@ -9,182 +9,92 @@ export interface IPValidationResult {
   error?: string;
 }
 
-/**
- * Validate and normalize an IP address
- */
+/** Validate a single IP address (no prefix) and return its canonical form. */
 export function validateIP(ip: string): IPValidationResult {
-  try {
-    // Remove any surrounding whitespace
-    const cleanIP = ip.trim();
-
-    // Try IPv4 first
-    try {
-      const ipv4 = new Address4(cleanIP);
-      return {
-        isValid: true,
-        version: 'IPv4',
-        normalized: ipv4.address,
-      };
-    } catch (e) {
-      // Not IPv4, try IPv6
-    }
-
-    // Try IPv6
-    try {
-      const ipv6 = new Address6(cleanIP);
-      return {
-        isValid: true,
-        version: 'IPv6',
-        normalized: ipv6.address,
-      };
-    } catch (e) {
-      // Not IPv6 either
-    }
-
+  const clean = ip.trim();
+  if (!clean || clean.includes('/')) {
+    return { isValid: false, error: 'Invalid IP address format' };
+  }
+  if (Address4.isValid(clean)) {
     return {
-      isValid: false,
-      error: 'Invalid IP address format',
-    };
-  } catch (error) {
-    return {
-      isValid: false,
-      error:
-        error instanceof Error ? error.message : 'Unknown validation error',
+      isValid: true,
+      version: 'IPv4',
+      normalized: new Address4(clean).correctForm(),
     };
   }
+  if (Address6.isValid(clean)) {
+    return {
+      isValid: true,
+      version: 'IPv6',
+      normalized: new Address6(clean).correctForm(),
+    };
+  }
+  return { isValid: false, error: 'Invalid IP address format' };
 }
 
-/**
- * Check if an IP address is in a private range
- */
+const PRIVATE_V4 = [
+  '10.0.0.0/8',
+  '172.16.0.0/12',
+  '192.168.0.0/16',
+  '127.0.0.0/8',
+  '169.254.0.0/16',
+].map((r) => new Address4(r));
+const PRIVATE_V6 = ['fc00::/7', 'fe80::/10', '::1/128'].map(
+  (r) => new Address6(r),
+);
+const RESERVED_V4 = [
+  '0.0.0.0/8',
+  '224.0.0.0/4',
+  '240.0.0.0/4',
+  '255.255.255.255/32',
+].map((r) => new Address4(r));
+const RESERVED_V6 = ['ff00::/8', '::/128'].map((r) => new Address6(r));
+
+function inRanges(ip: string, v4: Address4[], v6: Address6[]): boolean {
+  const { isValid, version, normalized } = validateIP(ip);
+  if (!isValid || !normalized) return false;
+  if (version === 'IPv4') {
+    const addr = new Address4(normalized);
+    return v4.some((r) => addr.isInSubnet(r));
+  }
+  const addr = new Address6(normalized);
+  return v6.some((r) => addr.isInSubnet(r));
+}
+
 export function isPrivateIP(ip: string): boolean {
-  const validation = validateIP(ip);
-  if (!validation.isValid || !validation.normalized) return false;
-
-  if (validation.version === 'IPv4') {
-    try {
-      const ipv4 = new Address4(validation.normalized);
-
-      // Private IPv4 ranges:
-      // 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16
-      // 127.0.0.0/8 (loopback), 169.254.0.0/16 (link-local)
-      const privateRanges = [
-        new Address4('10.0.0.0/8'),
-        new Address4('172.16.0.0/12'),
-        new Address4('192.168.0.0/16'),
-        new Address4('127.0.0.0/8'),
-        new Address4('169.254.0.0/16'),
-      ];
-
-      return privateRanges.some((range) => ipv4.isInSubnet(range));
-    } catch (e) {
-      return false;
-    }
-  }
-
-  if (validation.version === 'IPv6') {
-    try {
-      const ipv6 = new Address6(validation.normalized);
-
-      // Private IPv6 ranges:
-      // fc00::/7 (unique local), fe80::/10 (link-local), ::1/128 (loopback)
-      const privateRanges = [
-        new Address6('fc00::/7'),
-        new Address6('fe80::/10'),
-        new Address6('::1/128'),
-      ];
-
-      return privateRanges.some((range) => ipv6.isInSubnet(range));
-    } catch (e) {
-      return false;
-    }
-  }
-
-  return false;
+  return inRanges(ip, PRIVATE_V4, PRIVATE_V6);
 }
 
-/**
- * Check if an IP address is reserved/special use
- */
 export function isReservedIP(ip: string): boolean {
-  const validation = validateIP(ip);
-  if (!validation.isValid || !validation.normalized) return false;
+  return inRanges(ip, RESERVED_V4, RESERVED_V6);
+}
 
-  if (validation.version === 'IPv4') {
-    try {
-      const ipv4 = new Address4(validation.normalized);
-
-      // Reserved IPv4 ranges
-      const reservedRanges = [
-        new Address4('0.0.0.0/8'), // "This" network
-        new Address4('224.0.0.0/4'), // Multicast
-        new Address4('240.0.0.0/4'), // Reserved for future use
-        new Address4('255.255.255.255/32'), // Broadcast
-      ];
-
-      return reservedRanges.some((range) => ipv4.isInSubnet(range));
-    } catch (e) {
-      return false;
-    }
-  }
-
-  if (validation.version === 'IPv6') {
-    try {
-      const ipv6 = new Address6(validation.normalized);
-
-      // Reserved IPv6 ranges
-      const reservedRanges = [
-        new Address6('ff00::/8'), // Multicast
-        new Address6('::/128'), // Unspecified
-      ];
-
-      return reservedRanges.some((range) => ipv6.isInSubnet(range));
-    } catch (e) {
-      return false;
-    }
-  }
-
-  return false;
+function toBigInt(ip: string, version: IPVersion): bigint {
+  return version === 'IPv4'
+    ? new Address4(ip).bigInt()
+    : new Address6(ip).bigInt();
 }
 
 /**
- * Get the IP version
+ * Express an address range as CIDR when it is exactly one prefix,
+ * otherwise as "start - end".
  */
-export function getIPVersion(ip: string): IPVersion | null {
-  const validation = validateIP(ip);
-  return validation.isValid ? validation.version || null : null;
-}
-
-/**
- * Convert IPv4 to integer for range calculations
- */
-export function ipv4ToInt(ip: string): number {
-  const parts = ip.split('.').map(Number);
-  return (parts[0] << 24) + (parts[1] << 16) + (parts[2] << 8) + parts[3];
-}
-
-/**
- * Check if IPv4 is in CIDR range
- */
-export function isIPv4InCIDR(ip: string, cidr: string): boolean {
+export function rangeToCidr(
+  start: string,
+  end: string,
+  version: IPVersion,
+): string {
+  const bits = version === 'IPv4' ? 32 : 128;
   try {
-    const ipv4 = new Address4(ip);
-    const range = new Address4(cidr);
-    return ipv4.isInSubnet(range);
+    const s = toBigInt(start, version);
+    const e = toBigInt(end, version);
+    const size = e - s + BigInt(1);
+    if (size > BigInt(0) && (size & (size - BigInt(1))) === BigInt(0)) {
+      const hostBits = size.toString(2).length - 1;
+      if (s % size === BigInt(0)) return `${start}/${bits - hostBits}`;
+    }
   } catch {
-    return false;
+    // fall through
   }
-}
-
-/**
- * Check if IPv6 is in CIDR range
- */
-export function isIPv6InCIDR(ip: string, cidr: string): boolean {
-  try {
-    const ipv6 = new Address6(ip);
-    const range = new Address6(cidr);
-    return ipv6.isInSubnet(range);
-  } catch {
-    return false;
-  }
+  return `${start} - ${end}`;
 }
