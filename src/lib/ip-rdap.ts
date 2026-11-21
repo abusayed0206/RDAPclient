@@ -1,14 +1,38 @@
+// IP network RDAP lookup.
+
 import { Address4, Address6 } from 'ip-address';
 
-import { IPVersion, isPrivateIP, isReservedIP, validateIP } from './ip-utils';
+import {
+  IPVersion,
+  isPrivateIP,
+  isReservedIP,
+  rangeToCidr,
+  validateIP,
+} from './ip-utils';
 import { fetchBootstrapData } from './rdap-bootstrap';
+import {
+  EntityDetails,
+  entityDetails,
+  eventDate,
+  fetchRdapJson,
+  findEntityByRole,
+  holderName,
+  joinUrl,
+  pickServer,
+  RdapEntity,
+  RdapError,
+  RdapEvent,
+  RdapLink,
+  RdapRemark,
+  vcardValue,
+} from './rdap-common';
 
-// Enhanced interface for RDAP data with more details
 export interface NormalizedIPData {
   ip: string;
   type: IPVersion;
   network: {
     cidr?: string;
+    handle?: string;
     name?: string;
     country?: string;
     organization?: string;
@@ -18,304 +42,129 @@ export interface NormalizedIPData {
     type?: string;
     status?: string[];
   };
-  entities?: Array<{
-    handle?: string;
-    roles?: string[];
-    name?: string;
-    email?: string;
-    organization?: string;
-  }>;
-  remarks?: Array<{
-    title?: string;
-    description?: string[];
-  }>;
-  links?: Array<{
-    value?: string;
-    rel?: string;
-    href?: string;
-    type?: string;
-  }>;
+  entities?: EntityDetails[];
+  remarks?: RdapRemark[];
+  links?: RdapLink[];
   rdapServer: string;
-}
-
-// RDAP Response Interfaces
-interface RdapIPEntity {
-  handle?: string;
-  roles?: string[];
-  vcardArray?: [
-    string,
-    Array<[string, Record<string, unknown>, string, string]>,
-  ];
+  rdapUrl: string;
 }
 
 interface RdapIPResponse {
-  objectClassName: string;
+  handle?: string;
   startAddress?: string;
   endAddress?: string;
   name?: string;
   type?: string;
   country?: string;
   status?: string[];
-  events?: { eventAction: string; eventDate: string }[];
-  entities?: RdapIPEntity[];
-  remarks?: Array<{
-    title?: string;
-    description?: string[];
-  }>;
-  links?: Array<{
-    value?: string;
-    rel?: string;
-    href?: string;
-    type?: string;
-  }>;
+  events?: RdapEvent[];
+  entities?: RdapEntity[];
+  remarks?: RdapRemark[];
+  links?: RdapLink[];
+  cidr0_cidrs?: { v4prefix?: string; v6prefix?: string; length: number }[];
 }
 
-// Using centralized bootstrap utility
-
-/**
- * Find RDAP server for IP
- */
-async function findRdapServerForIP(
+async function findIPServer(
   ip: string,
   version: IPVersion,
 ): Promise<string | null> {
-  const bootstrapData = await fetchBootstrapData(
+  const { services } = await fetchBootstrapData(
     version === 'IPv4' ? 'ipv4' : 'ipv6',
   );
-  const cache = bootstrapData.services;
+  // Returns the matching prefix length, or null when ip is outside cidr.
+  const match = (cidr: string): number | null => {
+    if (version === 'IPv4') {
+      const range = new Address4(cidr);
+      return new Address4(ip).isInSubnet(range) ? range.subnetMask : null;
+    }
+    const range = new Address6(cidr);
+    return new Address6(ip).isInSubnet(range) ? range.subnetMask : null;
+  };
 
-  for (const [cidrs, urls] of cache) {
+  // Most specific registry entry wins.
+  let best: { prefix: number; url: string } | null = null;
+  for (const [cidrs, urls] of services) {
     for (const cidr of cidrs) {
       try {
-        if (version === 'IPv4') {
-          const ipAddr = new Address4(ip);
-          const range = new Address4(cidr);
-          if (ipAddr.isInSubnet(range)) {
-            return urls[0];
-          }
-        } else {
-          const ipAddr = new Address6(ip);
-          const range = new Address6(cidr);
-          if (ipAddr.isInSubnet(range)) {
-            return urls[0];
-          }
+        const prefix = match(cidr);
+        const url = pickServer(urls);
+        if (prefix !== null && url && (!best || prefix > best.prefix)) {
+          best = { prefix, url };
         }
-      } catch (e) {
-        continue;
+      } catch {
+        // skip malformed entries
       }
     }
   }
-
-  return null;
+  return best?.url ?? null;
 }
 
-/**
- * Query RDAP server for IP information
- */
-async function queryRdapServer(
-  ip: string,
-  rdapServerUrl: string,
-): Promise<RdapIPResponse> {
-  const baseUrl = rdapServerUrl.endsWith('/')
-    ? rdapServerUrl
-    : `${rdapServerUrl}/`;
-  const queryUrl = `${baseUrl}ip/${ip}`;
-
-  try {
-    const response = await fetch(queryUrl, {
-      headers: {
-        Accept: 'application/rdap+json, application/json',
-        'User-Agent': 'RDAPclient/1.0',
-      },
-    });
-
-    if (!response.ok) {
-      let errorMessage = `HTTP ${response.status}: ${response.statusText}`;
-      try {
-        const errorData = await response.json();
-        errorMessage = errorData.description || errorData.title || errorMessage;
-      } catch (e) {
-        // Use default error message
-      }
-      throw new Error(errorMessage);
-    }
-
-    return await response.json();
-  } catch (error) {
-    // eslint-disable-next-line no-console
-    console.error(`RDAP query failed for ${ip}:`, error);
-    throw error;
-  }
-}
-
-/**
- * Convert IP to integer for range comparison (IPv4 only)
- */
-function ipToInt(ip: string): number {
-  const parts = ip.split('.').map(Number);
-  return (parts[0] << 24) + (parts[1] << 16) + (parts[2] << 8) + parts[3];
-}
-
-/**
- * Extract organization from RDAP entities
- */
-function extractOrganization(entities: RdapIPEntity[]): string | undefined {
-  for (const entity of entities) {
-    if (entity.vcardArray && Array.isArray(entity.vcardArray[1])) {
-      const vcard = entity.vcardArray[1];
-
-      // Look for organization or full name
-      const org = vcard.find(
-        (item) => Array.isArray(item) && item[0] === 'org',
-      );
-      const fn = vcard.find((item) => Array.isArray(item) && item[0] === 'fn');
-
-      if (org && typeof org[3] === 'string') return org[3];
-      if (fn && typeof fn[3] === 'string') return fn[3];
-    }
+function networkCidr(data: RdapIPResponse, version: IPVersion) {
+  const cidrs = (data.cidr0_cidrs ?? [])
+    .map((c) => {
+      const prefix = c.v4prefix ?? c.v6prefix;
+      return prefix ? `${prefix}/${c.length}` : null;
+    })
+    .filter(Boolean);
+  if (cidrs.length) return cidrs.join(', ');
+  if (data.startAddress && data.endAddress) {
+    return rangeToCidr(data.startAddress, data.endAddress, version);
   }
   return undefined;
 }
 
-/**
- * Extract entity details from RDAP entity
- */
-function extractEntityDetails(entity: RdapIPEntity): {
-  handle?: string;
-  roles?: string[];
-  name?: string;
-  email?: string;
-  organization?: string;
-} {
-  const result: {
-    handle?: string;
-    roles?: string[];
-    name?: string;
-    email?: string;
-    organization?: string;
-  } = {
-    handle: entity.handle,
-    roles: entity.roles,
+export async function lookupIP(input: string): Promise<NormalizedIPData> {
+  const { isValid, version, normalized, error } = validateIP(input);
+  if (!isValid || !version || !normalized) {
+    throw new RdapError(error ?? 'Invalid IP address', 400);
+  }
+  if (isPrivateIP(normalized)) {
+    throw new RdapError(
+      'Private and loopback addresses are not registered in RDAP.',
+      400,
+    );
+  }
+  if (isReservedIP(normalized)) {
+    throw new RdapError(
+      'Reserved and multicast addresses are not registered in RDAP.',
+      400,
+    );
+  }
+
+  const server = await findIPServer(normalized, version);
+  if (!server) {
+    throw new RdapError(
+      `No RDAP server found for ${normalized}.`,
+      404,
+      'bootstrap',
+    );
+  }
+
+  const rdapUrl = joinUrl(server, `ip/${normalized}`);
+  const data = await fetchRdapJson<RdapIPResponse>(rdapUrl);
+  const registrar = findEntityByRole(data.entities, 'registrar');
+
+  return {
+    ip: normalized,
+    type: version,
+    network: {
+      cidr: networkCidr(data, version),
+      handle: data.handle,
+      name: data.name,
+      country: data.country,
+      organization: holderName(data.entities),
+      registrar: registrar
+        ? (vcardValue(registrar, 'org') ?? vcardValue(registrar, 'fn'))
+        : undefined,
+      registrationDate: eventDate(data.events, 'registration'),
+      lastChanged: eventDate(data.events, 'last changed', 'last update'),
+      type: data.type,
+      status: data.status,
+    },
+    entities: data.entities?.map(entityDetails),
+    remarks: data.remarks,
+    links: data.links,
+    rdapServer: server,
+    rdapUrl,
   };
-
-  if (entity.vcardArray && Array.isArray(entity.vcardArray[1])) {
-    const vcard = entity.vcardArray[1];
-
-    const fn = vcard.find((item) => Array.isArray(item) && item[0] === 'fn');
-    const email = vcard.find(
-      (item) => Array.isArray(item) && item[0] === 'email',
-    );
-    const org = vcard.find((item) => Array.isArray(item) && item[0] === 'org');
-
-    if (fn && typeof fn[3] === 'string') result.name = fn[3];
-    if (email && typeof email[3] === 'string') result.email = email[3];
-    if (org && typeof org[3] === 'string') result.organization = org[3];
-  }
-
-  return result;
-}
-
-/**
- * Extract date from RDAP events
- */
-function extractDate(
-  events: { eventAction: string; eventDate: string }[] | undefined,
-  action: string,
-): string | undefined {
-  const event = events?.find((e) => e.eventAction === action);
-  return event ? new Date(event.eventDate).toUTCString() : undefined;
-}
-
-/**
- * Main function to lookup IP information (RDAP only)
- */
-export async function lookupIP(ip: string): Promise<NormalizedIPData> {
-  // Validate IP address
-  const validation = validateIP(ip);
-  if (!validation.isValid || !validation.version || !validation.normalized) {
-    throw new Error(validation.error || 'Invalid IP address');
-  }
-
-  const normalizedIP = validation.normalized;
-  const version = validation.version;
-
-  // Check for private/reserved IP addresses
-  if (isPrivateIP(normalizedIP)) {
-    throw new Error('Private IP addresses are not supported');
-  }
-
-  if (isReservedIP(normalizedIP)) {
-    throw new Error('Reserved IP addresses are not supported');
-  }
-
-  try {
-    // Find appropriate RDAP server
-    const rdapServer = await findRdapServerForIP(normalizedIP, version);
-    if (!rdapServer) {
-      throw new Error(`No RDAP server found for IP ${normalizedIP}`);
-    }
-
-    // Query RDAP server
-    const rdapData = await queryRdapServer(normalizedIP, rdapServer);
-
-    // Extract essential network information
-    const organization = rdapData.entities
-      ? extractOrganization(rdapData.entities)
-      : undefined;
-    const registrar = rdapData.entities?.find((e) =>
-      e.roles?.includes('registrar'),
-    );
-
-    // Build CIDR notation
-    let cidr: string | undefined;
-    if (rdapData.startAddress && rdapData.endAddress) {
-      if (version === 'IPv4') {
-        try {
-          const startInt = ipToInt(rdapData.startAddress);
-          const endInt = ipToInt(rdapData.endAddress);
-          const size = endInt - startInt + 1;
-          const prefixLength = 32 - Math.log2(size);
-          cidr = `${rdapData.startAddress}/${Math.floor(prefixLength)}`;
-        } catch (e) {
-          cidr = `${rdapData.startAddress}-${rdapData.endAddress}`;
-        }
-      } else {
-        cidr = `${rdapData.startAddress}/64`; // Default for IPv6
-      }
-    }
-
-    // Extract entity details
-    const entities = rdapData.entities?.map(extractEntityDetails);
-
-    // Build response with enhanced RDAP data
-    const result: NormalizedIPData = {
-      ip: normalizedIP,
-      type: version,
-      network: {
-        cidr,
-        name: rdapData.name,
-        country: rdapData.country,
-        organization: organization,
-        registrar: registrar ? extractOrganization([registrar]) : undefined,
-        registrationDate: extractDate(rdapData.events, 'registration'),
-        lastChanged:
-          extractDate(rdapData.events, 'last changed') ||
-          extractDate(rdapData.events, 'last update'),
-        type: rdapData.type,
-        status: rdapData.status,
-      },
-      entities,
-      remarks: rdapData.remarks,
-      links: rdapData.links,
-      rdapServer,
-    };
-
-    return result;
-  } catch (error) {
-    const errorMessage =
-      error instanceof Error ? error.message : 'Unknown error occurred';
-    // eslint-disable-next-line no-console
-    console.error(`IP lookup failed for ${normalizedIP}:`, error);
-    throw new Error(errorMessage);
-  }
 }

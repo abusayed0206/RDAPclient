@@ -1,17 +1,24 @@
-import { fetchBootstrapData } from './rdap-bootstrap';
+// Autonomous System Number RDAP lookup.
 
-// ASN RDAP Response Interfaces
-interface RdapAsnEntity {
-  handle?: string;
-  roles?: string[];
-  vcardArray?: [
-    string,
-    Array<[string, Record<string, unknown>, string, string]>,
-  ];
-}
+import { fetchBootstrapData } from './rdap-bootstrap';
+import {
+  EntityDetails,
+  entityDetails,
+  eventDate,
+  fetchRdapJson,
+  findEntityByRole,
+  holderName,
+  joinUrl,
+  pickServer,
+  RdapEntity,
+  RdapError,
+  RdapEvent,
+  RdapLink,
+  RdapRemark,
+  vcardValue,
+} from './rdap-common';
 
 interface RdapAsnResponse {
-  objectClassName: string;
   handle?: string;
   startAutnum?: number;
   endAutnum?: number;
@@ -19,27 +26,16 @@ interface RdapAsnResponse {
   type?: string;
   status?: string[];
   country?: string;
-  events?: { eventAction: string; eventDate: string }[];
-  entities?: RdapAsnEntity[];
-  remarks?: Array<{
-    title?: string;
-    description?: string[];
-  }>;
-  links?: Array<{
-    value?: string;
-    rel?: string;
-    href?: string;
-    type?: string;
-  }>;
+  events?: RdapEvent[];
+  entities?: RdapEntity[];
+  remarks?: RdapRemark[];
+  links?: RdapLink[];
 }
 
-// Normalized ASN Data
 export interface NormalizedAsnData {
   asn: number;
-  range: {
-    start: number;
-    end: number;
-  };
+  handle?: string;
+  range: { start: number; end: number };
   name?: string;
   type?: string;
   status?: string[];
@@ -48,216 +44,84 @@ export interface NormalizedAsnData {
   registrar?: string;
   registrationDate?: string;
   lastChanged?: string;
-  remarks?: Array<{
-    title?: string;
-    description?: string[];
-  }>;
+  entities?: EntityDetails[];
+  remarks?: RdapRemark[];
   rdapServer: string;
+  rdapUrl: string;
 }
 
-/**
- * Validate ASN number
- */
+const MAX_ASN = 4294967295;
+
+/** Accepts "AS15169", "as 15169" or "15169". */
 export function validateASN(asn: string | number): {
   isValid: boolean;
   normalized?: number;
   error?: string;
 } {
-  try {
-    const asnNum = typeof asn === 'string' ? parseInt(asn.trim(), 10) : asn;
-
-    if (isNaN(asnNum)) {
-      return {
-        isValid: false,
-        error: 'Invalid ASN format',
-      };
-    }
-
-    // AS numbers range from 0 to 4294967295 (32-bit)
-    if (asnNum < 0 || asnNum > 4294967295) {
-      return {
-        isValid: false,
-        error: 'ASN must be between 0 and 4294967295',
-      };
-    }
-
-    // Reserved ranges
-    if (asnNum === 0 || asnNum === 65535 || asnNum === 4294967295) {
-      return {
-        isValid: false,
-        error: 'Reserved ASN',
-      };
-    }
-
-    return {
-      isValid: true,
-      normalized: asnNum,
-    };
-  } catch (error) {
-    return {
-      isValid: false,
-      error:
-        error instanceof Error ? error.message : 'Unknown validation error',
-    };
+  const raw = String(asn)
+    .trim()
+    .replace(/^as\s*/i, '');
+  if (!/^\d+$/.test(raw))
+    return { isValid: false, error: 'Invalid ASN format' };
+  const value = Number(raw);
+  if (value > MAX_ASN) {
+    return { isValid: false, error: `ASN must be between 1 and ${MAX_ASN}` };
   }
+  if (value === 0 || value === 23456 || value === 65535 || value === MAX_ASN) {
+    return { isValid: false, error: `AS${value} is reserved` };
+  }
+  return { isValid: true, normalized: value };
 }
 
-/**
- * Find RDAP server for ASN
- */
-async function findRdapServerForASN(asn: number): Promise<string | null> {
-  const bootstrapData = await fetchBootstrapData('asn');
-
-  for (const [ranges, urls] of bootstrapData.services) {
+async function findAsnServer(asn: number): Promise<string | null> {
+  const { services } = await fetchBootstrapData('asn');
+  for (const [ranges, urls] of services) {
     for (const range of ranges) {
-      // Handle ranges like "1-1876" or single numbers like "2043"
-      if (range.includes('-')) {
-        const [start, end] = range.split('-').map(Number);
-        if (asn >= start && asn <= end) {
-          return urls[0];
-        }
-      } else {
-        const singleAsn = Number(range);
-        if (asn === singleAsn) {
-          return urls[0];
-        }
-      }
+      const [start, end = start] = range.split('-').map(Number);
+      if (asn >= start && asn <= end) return pickServer(urls) ?? null;
     }
   }
-
   return null;
 }
 
-/**
- * Query RDAP server for ASN information
- */
-async function queryRdapServer(
-  asn: number,
-  rdapServerUrl: string,
-): Promise<RdapAsnResponse> {
-  const baseUrl = rdapServerUrl.endsWith('/')
-    ? rdapServerUrl
-    : `${rdapServerUrl}/`;
-  const queryUrl = `${baseUrl}autnum/${asn}`;
-
-  try {
-    const response = await fetch(queryUrl, {
-      headers: {
-        Accept: 'application/rdap+json, application/json',
-        'User-Agent': 'RDAPclient/1.0',
-      },
-    });
-
-    if (!response.ok) {
-      let errorMessage = `HTTP ${response.status}: ${response.statusText}`;
-      try {
-        const errorData = await response.json();
-        errorMessage = errorData.description || errorData.title || errorMessage;
-      } catch (e) {
-        // Use default error message
-      }
-      throw new Error(errorMessage);
-    }
-
-    return await response.json();
-  } catch (error) {
-    // eslint-disable-next-line no-console
-    console.error(`RDAP query failed for AS${asn}:`, error);
-    throw error;
-  }
-}
-
-/**
- * Extract organization from RDAP entities
- */
-function extractOrganization(entities: RdapAsnEntity[]): string | undefined {
-  for (const entity of entities) {
-    if (entity.vcardArray && Array.isArray(entity.vcardArray[1])) {
-      const vcard = entity.vcardArray[1];
-
-      // Look for organization or full name
-      const org = vcard.find(
-        (item) => Array.isArray(item) && item[0] === 'org',
-      );
-      const fn = vcard.find((item) => Array.isArray(item) && item[0] === 'fn');
-
-      if (org && typeof org[3] === 'string') return org[3];
-      if (fn && typeof fn[3] === 'string') return fn[3];
-    }
-  }
-  return undefined;
-}
-
-/**
- * Extract date from RDAP events
- */
-function extractDate(
-  events: { eventAction: string; eventDate: string }[] | undefined,
-  action: string,
-): string | undefined {
-  const event = events?.find((e) => e.eventAction === action);
-  return event ? new Date(event.eventDate).toUTCString() : undefined;
-}
-
-/**
- * Main function to lookup ASN information (RDAP only)
- */
 export async function lookupASN(
-  asn: string | number,
+  input: string | number,
 ): Promise<NormalizedAsnData> {
-  // Validate ASN
-  const validation = validateASN(asn);
-  if (!validation.isValid || !validation.normalized) {
-    throw new Error(validation.error || 'Invalid ASN');
+  const { isValid, normalized: asn, error } = validateASN(input);
+  if (!isValid || asn === undefined) {
+    throw new RdapError(error ?? 'Invalid ASN', 400);
   }
 
-  const normalizedASN = validation.normalized;
-
-  try {
-    // Find appropriate RDAP server
-    const rdapServer = await findRdapServerForASN(normalizedASN);
-    if (!rdapServer) {
-      throw new Error(`No RDAP server found for AS${normalizedASN}`);
-    }
-
-    // Query RDAP server
-    const rdapData = await queryRdapServer(normalizedASN, rdapServer);
-
-    // Extract essential information
-    const organization = rdapData.entities
-      ? extractOrganization(rdapData.entities)
-      : undefined;
-    const registrar = rdapData.entities?.find((e) =>
-      e.roles?.includes('registrar'),
+  const server = await findAsnServer(asn);
+  if (!server) {
+    throw new RdapError(
+      `AS${asn} is not delegated to any RDAP-enabled registry.`,
+      404,
+      'bootstrap',
     );
-
-    // Build response with RDAP data
-    const result: NormalizedAsnData = {
-      asn: normalizedASN,
-      range: {
-        start: rdapData.startAutnum || normalizedASN,
-        end: rdapData.endAutnum || normalizedASN,
-      },
-      name: rdapData.name,
-      type: rdapData.type,
-      status: rdapData.status,
-      country: rdapData.country,
-      organization: organization,
-      registrar: registrar ? extractOrganization([registrar]) : undefined,
-      registrationDate: extractDate(rdapData.events, 'registration'),
-      lastChanged:
-        extractDate(rdapData.events, 'last changed') ||
-        extractDate(rdapData.events, 'last update'),
-      remarks: rdapData.remarks,
-      rdapServer,
-    };
-
-    return result;
-  } catch (error) {
-    const errorMessage =
-      error instanceof Error ? error.message : 'Unknown error occurred';
-    // eslint-disable-next-line no-console
-    console.error(`ASN lookup failed for AS${normalizedASN}:`, error);
-    throw new Error(errorMessage);
   }
+
+  const rdapUrl = joinUrl(server, `autnum/${asn}`);
+  const data = await fetchRdapJson<RdapAsnResponse>(rdapUrl);
+  const registrar = findEntityByRole(data.entities, 'registrar');
+
+  return {
+    asn,
+    handle: data.handle,
+    range: { start: data.startAutnum ?? asn, end: data.endAutnum ?? asn },
+    name: data.name,
+    type: data.type,
+    status: data.status,
+    country: data.country,
+    organization: holderName(data.entities),
+    registrar: registrar
+      ? (vcardValue(registrar, 'org') ?? vcardValue(registrar, 'fn'))
+      : undefined,
+    registrationDate: eventDate(data.events, 'registration'),
+    lastChanged: eventDate(data.events, 'last changed', 'last update'),
+    entities: data.entities?.map(entityDetails),
+    remarks: data.remarks,
+    rdapServer: server,
+    rdapUrl,
+  };
 }

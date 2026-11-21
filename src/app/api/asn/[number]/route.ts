@@ -1,26 +1,18 @@
-import { NextResponse } from 'next/server';
-
+import { errorResponse, lookupResponse } from '@/lib/api';
 import { lookupASN } from '@/lib/asn-rdap';
 
 export async function GET(
-  request: Request,
-  { params }: { params: { number: string } },
+  _request: Request,
+  { params }: { params: Promise<{ number: string }> },
 ) {
+  const { number } = await params;
+  const startedAt = performance.now();
   try {
-    const asnNumber = params.number;
-
-    if (!asnNumber) {
-      return NextResponse.json(
-        { error: 'ASN number required' },
-        { status: 400 },
-      );
-    }
-
-    const data = await lookupASN(asnNumber);
-
-    return NextResponse.json(data);
-  } catch (error: unknown) {
-    const message = error instanceof Error ? error.message : 'Unknown error';
-    return NextResponse.json({ error: message }, { status: 500 });
+    return lookupResponse(
+      await lookupASN(decodeURIComponent(number)),
+      startedAt,
+    );
+  } catch (error) {
+    return errorResponse(error);
   }
 }

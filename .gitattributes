@@ -1,0 +1,5 @@
+# Prettier writes LF; keep Git from converting to CRLF on Windows (breaks lint-staged).
+* text=auto eol=lf
+*.png binary
+*.ico binary
+*.woff2 binary

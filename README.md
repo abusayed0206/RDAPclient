@@ -1,6 +1,6 @@
 # 🌐 RDAPclient
 
-**RDAPclient** is a blazing-fast domain lookup service powered by **Next.js** and **RDAP**. It features a responsive web UI and a clean JSON-based API for retrieving domain registration data in real-time.
+**RDAPclient** is a fast domain, IP and ASN lookup service powered by **Next.js** and **RDAP**. It features a responsive web UI and a clean JSON API for retrieving registration data in real time.
 
 ## ✨ Features
 
@@ -31,15 +31,17 @@
 
 ## 📡 API Documentation
 
-Query domain WHOIS/RDAP records programmatically.
+Query RDAP records programmatically. Interactive docs with live examples: [rdap.sayed.app/api](https://rdap.sayed.app/api). All endpoints are `GET`, CORS-enabled, and return `{ "error": "..." }` with a matching HTTP status (400 invalid input, 404 not found / no RDAP service, 502/504 upstream registry problem) on failure. Successful responses are edge-cached for an hour.
 
-### 🔗 Endpoint
+### 🔗 Endpoints
 
-```
-GET https://rdap.sayed.app/api/[domain]
-```
+| Endpoint               | Looks up                                       |
+| ---------------------- | ---------------------------------------------- |
+| `/api/lookup/{domain}` | Domain registration (URLs/subdomains accepted) |
+| `/api/ip/{address}`    | IPv4 / IPv6 network allocation                 |
+| `/api/asn/{number}`    | Autonomous system (`15169` or `AS15169`)       |
 
-> Replace `[domain]` with a valid domain like `example.com`.
+Every response includes `rdapServer` and `rdapUrl`, the exact upstream query.
 
 ### ✅ Example Request
 
